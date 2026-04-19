@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>灵犀塔罗 · 移动手势占卜</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <style>
+        * {
+            user-select: none;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            background: radial-gradient(circle at 20% 30%, #0a0c1a, #010101);
+            font-family: 'Segoe UI', 'Georgia', serif;
+            color: #f3e9c0;
+            margin: 0;
+            padding: 12px;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .tarot-container {
+            width: 100%;
+            max-width: 550px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            border-radius: 32px;
+            padding: 12px;
+            border: 1px solid #dbb45c;
+        }
+        h1 {
+            text-align: center;
+            font-size: 1.6rem;
+            letter-spacing: 4px;
+            margin: 0 0 4px;
+            text-shadow: 0 0 6px #ffc107;
+        }
+        .sub {
+            text-align: center;
+            font-size: 0.75rem;
+            opacity: 0.8;
+            margin-bottom: 8px;
+        }
+        /* 翻牌区域 */
+        #revealArea {
+            display: none;
+            text-align: center;
+            margin: 8px 0 12px;
+            flex-direction: column;
+            align-items: center;
+        }
+        .reveal-slots {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .reveal-slot {
+            background: rgba(25, 20, 10, 0.7);
+            backdrop-filter: blur(8px);
+            border-radius: 20px;
+            padding: 8px 5px;
+            border: 1px solid #e6bc6e;
+            width: 100px;
+        }
+        .slot-label {
+            font-size: 0.8rem;
+            font-weight: bold;
+            letter-spacing: 1px;
+            border-bottom: 1px solid #ffdf80;
+            display: inline-block;
+            margin-bottom: 6px;
+        }
+        .custom-text {
+            font-size: 0.6rem;
+            background: rgba(0,0,0,0.6);
+            border-radius: 16px;
+            padding: 3px 4px;
+            margin-top: 6px;
+            color: #ffe0a3;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .custom-text.visible { opacity: 1; }
+        .reveal-card {
+            width: 80px;
+            height: 120px;
+            margin: 6px auto;
+            border-radius: 12px;
+            border: 2px solid gold;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            overflow: hidden;
+            animation: fadeInScale 0.4s ease-out forwards;
+        }
+        .reveal-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        @keyframes fadeInScale {
+            0% { opacity: 0; transform: scale(0.5) translateY(20px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .cards-area {
+            margin-bottom: 12px;
+        }
+        canvas#cardCanvas {
+            width: 100%;
+            background: #070411;
+            border-radius: 24px;
+            display: block;
+            margin: 0 auto;
+        }
+        .gesture-panel {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #1f1b0e;
+            border-radius: 40px;
+            padding: 6px 12px;
+            margin: 8px 0 12px;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .gesture-icon {
+            font-size: 1.4rem;
+        }
+        .timer-ring {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: conic-gradient(#ffd966 0deg, #3a2e1f 0deg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.8rem;
+            box-shadow: 0 0 4px gold;
+        }
+        .status-text {
+            background: #000000aa;
+            padding: 4px 10px;
+            border-radius: 24px;
+            font-weight: bold;
+            font-size: 0.7rem;
+        }
+        .action-buttons {
+            display: flex;
+            justify-content: center;
+            margin: 8px 0;
+        }
+        button {
+            background: #2b2415;
+            border: 1px solid #e6bc6e;
+            color: #fff0cf;
+            padding: 6px 18px;
+            border-radius: 40px;
+            font-weight: bold;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+        button:active {
+            transform: scale(0.96);
+            background: #4f3e1f;
+        }
+        footer {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 0.6rem;
+            opacity: 0.6;
+        }
+        /* 音乐按钮 */
+        .music-btn {
+            position: fixed;
+            bottom: 15px;
+            right: 15px;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.7);
+            border: 2px solid gold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            transition: 0.2s;
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+        }
+        .music-btn:active {
+            transform: scale(0.95);
+        }
+        @media (max-width: 500px) {
+            .reveal-slot { width: 85px; }
+            .reveal-card { width: 70px; height: 105px; }
+        }
+    </style>
+</head>
+<body>
+<div class="tarot-container">
+    <h1>✨ 灵犀塔罗 ✨</h1>
+    <div class="sub">抽塔罗牌 看你心动Crush 😊</div>
+    <div id="revealArea">
+        <div class="reveal-slots">
+            <div class="reveal-slot"><div class="slot-label">🌙 过去</div><div id="revealPast" style="margin: 6px auto; min-height: 130px;"></div><div id="pastText" class="custom-text">Crush心动005<br>@一休呀！</div></div>
+            <div class="reveal-slot"><div class="slot-label">✨ 现在</div><div id="revealNow" style="margin: 6px auto; min-height: 130px;"></div><div id="nowText" class="custom-text">Crush心动005<br>@一休呀！</div></div>
+            <div class="reveal-slot"><div class="slot-label">🔮 未来</div><div id="revealFuture" style="margin: 6px auto; min-height: 130px;"></div><div id="futureText" class="custom-text">Crush心动005<br>@一休呀！</div></div>
+        </div>
+        <button id="resetAfterReveal" style="margin-top: 10px;">🔄 重新占卜 (也可五指张开)</button>
+    </div>
+    <div class="cards-area">
+        <canvas id="cardCanvas" width="500" height="300" style="width:100%; height:auto; background:#070411; border-radius: 24px;"></canvas>
+    </div>
+    <div class="gesture-panel">
+        <div class="gesture-icon">🤜👉</div>
+        <div class="timer-ring" id="timerRing">0%</div>
+        <div class="status-text" id="gestureStatus">⚡ 等待手势</div>
+        <div style="font-size:0.65rem;">小光圈变绿 → 对准牌 → 保持2秒</div>
+    </div>
+    <div class="action-buttons"><button id="resetBtn">🔄 重置仪式 (五指张开也可重置)</button></div>
+    <footer>抽牌规则：22张牌背，随机抽取3张不同照片。</footer>
+</div>
+<div class="music-btn" id="musicToggleBtn">🎵</div>
+
+<script>
+    // ---------- 移动端自适应变量 ----------
+    let CANVAS_W, CANVAS_H;
+    let canvas = document.getElementById('cardCanvas');
+    let ctx = canvas.getContext('2d');
+    
+    // 响应式参数 (将在 resize 中动态更新)
+    let ringCenter = { x: 0, y: 0 };
+    let ringRadius = 40;
+    let cardRadius = 120;
+    let startAngleDeg = -165;
+    let endAngleDeg = -15;
+    let totalCardsCount = 22;
+    let cardW = 50, cardH = 75;  // 移动端稍小
+    
+    // 更新画布尺寸和扇形参数
+    function resizeCanvas() {
+        const container = canvas.parentElement;
+        CANVAS_W = container.clientWidth;
+        CANVAS_H = Math.min(container.clientWidth * 0.6, 400); // 保持比例
+        canvas.width = CANVAS_W;
+        canvas.height = CANVAS_H;
+        // 动态调整圆心位置 (偏下)
+        ringCenter = { x: CANVAS_W/2, y: CANVAS_H - 60 };
+        // 根据宽度调整半径和卡片大小
+        cardRadius = Math.min(CANVAS_W * 0.28, 130);
+        cardW = Math.max(42, Math.min(CANVAS_W * 0.08, 55));
+        cardH = cardW * 1.45;
+        ringRadius = cardRadius * 0.3;
+        // 重新计算牌位
+        if (cards && cards.length) computeCardPositions();
+        drawCanvas();
+    }
+    
+    // ---------- 照片库（14张） ----------
+    const PHOTOS = [
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/WrCg/1179X2096/image_1776604627966_8.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/sCl5/1290X2093/image_1776604627966_7.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/rqgJ/1080X1891/image_1776604627966_6.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/qZLz/1170X1558/image_1776604627966_0.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/mCvi/1260X1916/image_1776604627966_1.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/d83b/1080X2347/image_1776604627966_5.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/CWxd/1260X1992/image_1776604627966_2.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/NsTR/720X1610/image_1776604627966_4.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/3BZo/1245X1245/image_1776604627966_3.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/t5LW/1170X2532/image_1776604673826_4.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/xnnq/720X1360/image_1776604673826_1.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/SWm9/1080X2341/image_1776604673826_2.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/2fKc/720X1610/image_1776604673826_0.jpg",
+        "https://test.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/6N61/720X1610/image_1776604673826_3.jpg"
+    ];
+    
+    // ---------- 背景音乐 ----------
+    const bgMusic = new Audio("https://audio.fukit.cn/autoupload/f/NhDBK75FzuIkNahVbSLSH0vitJPXoDWeRJUjK09TY04XXCK0EeRkfAkZ77sTS8YJ/20260419/tZex/%E8%AF%B4%E6%98%8E%E9%9F%B3%E4%B9%90.mp3");
+    bgMusic.loop = true;
+    bgMusic.volume = 0.4;
+    let musicPlaying = false;
+    let musicAttempted = false;
+    const musicBtn = document.getElementById('musicToggleBtn');
+    
+    function startMusic() {
+        if (musicPlaying) return;
+        bgMusic.play().then(() => {
+            musicPlaying = true;
+            musicBtn.innerHTML = "🔊";
+            musicBtn.style.opacity = "1";
+        }).catch(e => {
+            console.log("音乐自动播放失败，请手动点击按钮", e);
+            musicBtn.innerHTML = "🎵";
+            musicBtn.style.opacity = "0.6";
+        });
+    }
+    function toggleMusic() {
+        if (musicPlaying) {
+            bgMusic.pause();
+            musicPlaying = false;
+            musicBtn.innerHTML = "🔇";
+        } else {
+            startMusic();
+        }
+    }
+    musicBtn.addEventListener('click', toggleMusic);
+    function attemptAutoPlay() {
+        if (!musicPlaying && !musicAttempted) {
+            musicAttempted = true;
+            startMusic();
+        }
+    }
+    
+    // ---------- 照片池管理 ----------
+    let availablePhotoIndices = [];
+    function initPhotoPool() {
+        availablePhotoIndices = [...Array(PHOTOS.length).keys()];
+        for (let i = availablePhotoIndices.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [availablePhotoIndices[i], availablePhotoIndices[j]] = [availablePhotoIndices[j], availablePhotoIndices[i]];
+        }
+    }
+    function getRandomPhoto() {
+        if (availablePhotoIndices.length === 0) initPhotoPool();
+        const randIdx = Math.floor(Math.random() * availablePhotoIndices.length);
+        const photoIndex = availablePhotoIndices[randIdx];
+        availablePhotoIndices.splice(randIdx, 1);
+        return PHOTOS[photoIndex];
+    }
+    initPhotoPool();
+    
+    // ---------- 塔罗牌核心逻辑 ----------
+    let isDeckStacked = true;
+    let isSpread = false;
+    let cards = [];
+    let drawnTempCards = [];
+    let phase = 0;
+    let isRevealMode = false;
+    let pendingRevealTimeout = null;
+    
+    let ringPulse = 0, ringDirection = 1;
+    let currentGestureValid = false;
+    let fingerTipPos = { x: 0, y: 0 };
+    let hoverCardId = null;
+    let timerSec = 0, timerActive = false, timerIntervalId = null;
+    let frameSkip = 3;      // 移动端降低帧率
+    let frameIdx = 0;
+    let resetGestureActive = false;
+    let resetTimerSec = 0;
+    let resetTimerInterval = null;
+    let isShuffling = false;
+    let shuffleStartTime = 0;
+    let shuffleSpeed = 6;
+    
+    // 华丽牌背绘制（自适应尺寸）
+    function drawCardBack(x, y, w, h, highlight=false) {
+        ctx.save();
+        ctx.shadowBlur = highlight ? 8 : 3;
+        ctx.shadowColor = highlight ? "gold" : "rgba(255,215,0,0.4)";
+        const grad = ctx.createLinearGradient(x, y, x+w, y+h);
+        grad.addColorStop(0, "#1a0f2e");
+        grad.addColorStop(1, "#2d1b4e");
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = "#e6c87e";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x+2, y+2, w-4, h-4);
+        ctx.strokeStyle = "#ffdf99";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x+3, y+3, w-6, h-6);
+        ctx.font = `${Math.floor(w*0.18)}px "Segoe UI", "Georgia"`;
+        ctx.fillStyle = "#ffd966";
+        ctx.fillText("🌙", x+5, y+15);
+        ctx.fillText("✨", x+w-18, y+16);
+        ctx.fillText("⭐", x+5, y+h-8);
+        ctx.fillText("🌙", x+w-18, y+h-8);
+        let centerX = x + w/2;
+        let centerY = y + h/2;
+        let outerR = Math.min(w, h) * 0.25;
+        let innerR = outerR * 0.4;
+        let points = 5;
+        let step = Math.PI / points;
+        let rot = Math.PI / 2 * 3;
+        ctx.beginPath();
+        for(let i=0; i<points; i++) {
+            let x1 = centerX + Math.cos(rot + i*step*2) * outerR;
+            let y1 = centerY + Math.sin(rot + i*step*2) * outerR;
+            let x2 = centerX + Math.cos(rot + (i*2+1)*step) * innerR;
+            let y2 = centerY + Math.sin(rot + (i*2+1)*step) * innerR;
+            if(i===0) ctx.moveTo(x1, y1);
+            else ctx.lineTo(x1, y1);
+            ctx.lineTo(x2, y2);
+        }
+        ctx.closePath();
+        ctx.fillStyle = "#ffd966";
+        ctx.fill();
+        ctx.fillStyle = "#ffe4b5";
+        ctx.font = `${Math.floor(w*0.1)}px "Segoe UI"`;
+        for(let i=0; i<6; i++) {
+            let angle = (i / 6) * Math.PI * 2;
+            let starX = centerX + Math.cos(angle) * outerR * 1.2;
+            let starY = centerY + Math.sin(angle) * outerR * 1.2;
+            ctx.fillText("★", starX-4, starY+4);
+        }
+        ctx.font = `italic ${Math.floor(w*0.08)}px "Georgia"`;
+        ctx.fillStyle = "#c9ae6d";
+        ctx.fillText("☆ TAROT ☆", centerX-18, y+h-6);
+        ctx.restore();
+    }
+    
+    function initSpreadCards() {
+        cards = [];
+        for(let i=0; i<totalCardsCount; i++) {
+            cards.push({ id: i, removed: false, x: 0, y: 0, w: cardW, h: cardH });
+        }
+        computeCardPositions();
+    }
+    
+    function computeCardPositions() {
+        let active = cards.filter(c => !c.removed);
+        let count = active.length;
+        if(count === 0) return;
+        let angleStep = (endAngleDeg - startAngleDeg) / (count - 1);
+        for(let idx=0; idx<count; idx++) {
+            let card = active[idx];
+            let angleDeg = startAngleDeg + idx * angleStep;
+            let angleRad = angleDeg * Math.PI / 180;
+            let cx = ringCenter.x + cardRadius * Math.cos(angleRad);
+            let cy = ringCenter.y + cardRadius * Math.sin(angleRad);
+            card.x = cx - card.w/2;
+            card.y = cy - card.h/2;
+        }
+    }
+    
+    function drawStackedDeck() {
+        let baseX = ringCenter.x - 35;
+        let baseY = ringCenter.y - 55;
+        let w = cardW*1.3, h = cardH*1.3;
+        const layers = 10;
+        for(let i=layers-1; i>=0; i--) {
+            let offsetX = (i % 3) * 1.2 - 1.5;
+            let offsetY = i * 1;
+            let rot = (i % 5 - 2) * 0.02;
+            ctx.save();
+            ctx.translate(baseX + offsetX, baseY + offsetY);
+            ctx.rotate(rot);
+            drawCardBack(0, 0, w, h);
+            ctx.restore();
+        }
+        ctx.save();
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = "rgba(255,215,0,0.7)";
+        drawCardBack(baseX, baseY, w, h, true);
+        ctx.restore();
+    }
+    
+    function drawSpread() {
+        let active = cards.filter(c => !c.removed);
+        for(let card of active) {
+            drawCardBack(card.x, card.y, card.w, card.h, hoverCardId === card.id && currentGestureValid);
+        }
+    }
+    
+    function drawBigRing() {
+        ringPulse += ringDirection * 0.02;
+        if(ringPulse >= 1) { ringPulse = 1; ringDirection = -1; }
+        if(ringPulse <= 0.5) { ringPulse = 0.5; ringDirection = 1; }
+        let alpha = 0.4 + ringPulse * 0.3;
+        let radiusPulse = ringRadius + ringPulse * 6;
+        ctx.save();
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = "rgba(255, 215, 0, 0.8)";
+        ctx.beginPath();
+        ctx.arc(ringCenter.x, ringCenter.y, radiusPulse, 0, 2*Math.PI);
+        ctx.strokeStyle = `rgba(255, 215, 0, ${alpha})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(ringCenter.x, ringCenter.y, radiusPulse-4, 0, 2*Math.PI);
+        ctx.strokeStyle = `rgba(255, 200, 100, ${alpha*0.6})`;
+        ctx.stroke();
+        ctx.font = "bold 11px 'Segoe UI'";
+        ctx.fillStyle = `rgba(255, 235, 160, 0.9)`;
+        ctx.fillText("✦ 手势区 ✦", ringCenter.x-35, ringCenter.y-8);
+        ctx.restore();
+    }
+    
+    function drawSmallRing() {
+        let color = currentGestureValid ? "#00ffaa" : "#ff3366";
+        let glowColor = currentGestureValid ? "rgba(0,255,170,0.6)" : "rgba(255,51,102,0.6)";
+        ctx.save();
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = glowColor;
+        ctx.beginPath();
+        ctx.arc(fingerTipPos.x, fingerTipPos.y, 8, 0, 2*Math.PI);
+        ctx.fillStyle = `${color}aa`;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(fingerTipPos.x, fingerTipPos.y, 4, 0, 2*Math.PI);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(fingerTipPos.x, fingerTipPos.y, 2, 0, 2*Math.PI);
+        ctx.fillStyle = "white";
+        ctx.fill();
+        ctx.restore();
+    }
+    
+    function drawShuffleAnimation() {
+        let elapsed = (Date.now() - shuffleStartTime) / 1000;
+        if(elapsed >= 1.5) {
+            isShuffling = false;
+            isDeckStacked = false;
+            isSpread = true;
+            initSpreadCards();
+            drawnTempCards = [];
+            phase = 0;
+            isRevealMode = false;
+            if(pendingRevealTimeout) clearTimeout(pendingRevealTimeout);
+            document.getElementById("revealArea").style.display = "none";
+            drawCanvas();
+            document.getElementById("gestureStatus").innerText = "✨ 洗牌完成，请抽第一张牌 ✨";
+            return;
+        }
+        let angleOffset = elapsed * shuffleSpeed;
+        let allCards = [];
+        for(let i=0; i<totalCardsCount; i++) allCards.push({ w: cardW, h: cardH });
+        let count = allCards.length;
+        let angleStep = (Math.PI * 2) / count;
+        for(let idx=0; idx<count; idx++) {
+            let angle = idx * angleStep + angleOffset;
+            let cx = ringCenter.x + cardRadius * Math.cos(angle);
+            let cy = ringCenter.y + cardRadius * Math.sin(angle);
+            let x = cx - allCards[idx].w/2;
+            let y = cy - allCards[idx].h/2;
+            drawCardBack(x, y, allCards[idx].w, allCards[idx].h);
+        }
+        ctx.save();
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = "gold";
+        for(let i=0;i<12;i++) {
+            let a = angleOffset*2 + i * Math.PI*2/12;
+            let x = ringCenter.x + Math.cos(a) * (cardRadius+15);
+            let y = ringCenter.y + Math.sin(a) * (cardRadius+15);
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, 2*Math.PI);
+            ctx.fillStyle = `rgba(255, 215, 0, ${0.8 - elapsed/2})`;
+            ctx.fill();
+        }
+        ctx.restore();
+        drawBigRing();
+        ctx.font = "italic 12px Georgia";
+        ctx.fillStyle = "#ffdd99";
+        ctx.fillText("✨ 洗牌中... ✨", ringCenter.x-60, ringCenter.y-40);
+    }
+    
+    function drawCanvas() {
+        if(isShuffling) { drawShuffleAnimation(); return; }
+        ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
+        if(isDeckStacked) {
+            drawStackedDeck();
+            drawBigRing();
+            drawSmallRing();
+            ctx.font = "italic 10px Georgia";
+            ctx.fillStyle = "#dbb257";
+            ctx.fillText("✦ 五指张开保持1秒，洗牌展开 ✦", 10, 20);
+        } else if(isSpread && !isRevealMode) {
+            drawSpread();
+            drawBigRing();
+            drawSmallRing();
+            ctx.font = "italic 10px Georgia";
+            ctx.fillStyle = "#dbb257";
+            ctx.fillText(`✦ 抽牌阶段 ${phase+1}/3，指向牌保持2秒 ✦`, 10, 20);
+            if(drawnTempCards.length > 0) {
+                let gap = 10;
+                let totalWidth = drawnTempCards.length * cardW + (drawnTempCards.length-1) * gap;
+                let startX = ringCenter.x - totalWidth / 2;
+                let yPos = ringCenter.y + 15;
+                for(let i=0; i<drawnTempCards.length; i++) {
+                    let x = startX + i * (cardW + gap);
+                    drawCardBack(x, yPos, cardW, cardH);
+                }
+            }
+        } else if(isRevealMode) {
+            ctx.fillStyle = "#070411";
+            ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+            drawBigRing();
+            ctx.font = "italic 12px Georgia";
+            ctx.fillStyle = "#ffdd99";
+            ctx.fillText("✨ 翻牌仪式 ✨", ringCenter.x-45, ringCenter.y-20);
+        }
+    }
+    
+    function findNearestCard(px, py) {
+        let minDist = 40;
+        let closest = null;
+        for(let card of cards.filter(c=>!c.removed)) {
+            let cx = card.x + card.w/2;
+            let cy = card.y + card.h/2;
+            let dist = Math.hypot(px-cx, py-cy);
+            if(dist < minDist) { minDist = dist; closest = card; }
+        }
+        return closest;
+    }
+    
+    function performDraw(cardId) {
+        if(phase >= 3) return false;
+        let card = cards.find(c=>c.id===cardId);
+        if(!card || card.removed) return false;
+        let photoUrl = getRandomPhoto();
+        card.removed = true;
+        drawnTempCards.push({ photoUrl: photoUrl, cardId: cardId });
+        phase++;
+        computeCardPositions();
+        drawCanvas();
+        if(phase === 3) {
+            document.getElementById("gestureStatus").innerText = "✨ 三张已抽完，即将翻牌 ✨";
+            if(pendingRevealTimeout) clearTimeout(pendingRevealTimeout);
+            pendingRevealTimeout = setTimeout(() => {
+                if(!isShuffling && !isRevealMode && phase === 3 && !isDeckStacked) startRevealMode();
+            }, 1200);
+        } else {
+            document.getElementById("gestureStatus").innerText = `✅ 已抽 ${phase} 张，继续抽第 ${phase+1} 张`;
+        }
+        return true;
+    }
+    
+    function startRevealMode() {
+        if(isRevealMode) return;
+        isRevealMode = true;
+        isSpread = false;
+        document.getElementById("revealArea").style.display = "flex";
+        drawCanvas();
+        document.getElementById("revealPast").innerHTML = "";
+        document.getElementById("revealNow").innerHTML = "";
+        document.getElementById("revealFuture").innerHTML = "";
+        document.getElementById("pastText").classList.remove("visible");
+        document.getElementById("nowText").classList.remove("visible");
+        document.getElementById("futureText").classList.remove("visible");
+        let index = 0;
+        const slots = ["revealPast", "revealNow", "revealFuture"];
+        const textIds = ["pastText", "nowText", "futureText"];
+        function showNext() {
+            if(index >= drawnTempCards.length) {
+                document.getElementById("gestureStatus").innerText = "✨ 占卜完成，五指张开或点击按钮重置 ✨";
+                return;
+            }
+            const photoUrl = drawnTempCards[index].photoUrl;
+            const slotId = slots[index];
+            const textId = textIds[index];
+            const cardDiv = document.createElement("div");
+            cardDiv.className = "reveal-card";
+            const img = document.createElement("img");
+            img.src = photoUrl;
+            img.onerror = () => { img.src = "https://picsum.photos/id/104/200/300"; };
+            cardDiv.appendChild(img);
+            document.getElementById(slotId).appendChild(cardDiv);
+            setTimeout(() => { document.getElementById(textId).classList.add("visible"); }, 300);
+            index++;
+            setTimeout(showNext, 1000);
+        }
+        showNext();
+    }
+    
+    function fullReset() {
+        if(isShuffling) return;
+        if(pendingRevealTimeout) clearTimeout(pendingRevealTimeout);
+        isDeckStacked = true;
+        isSpread = false;
+        isRevealMode = false;
+        phase = 0;
+        drawnTempCards = [];
+        initPhotoPool();
+        document.getElementById("revealArea").style.display = "none";
+        document.getElementById("gestureStatus").innerText = "🔄 重置完成，五指张开洗牌展开";
+        drawCanvas();
+    }
+    
+    function startShuffleAndReset() {
+        if(isShuffling) return;
+        if(!isDeckStacked) {
+            fullReset();
+            setTimeout(() => {
+                if(isDeckStacked && !isShuffling) {
+                    isShuffling = true;
+                    shuffleStartTime = Date.now();
+                    document.getElementById("gestureStatus").innerText = "🃟 洗牌展开中... 🃟";
+                    drawCanvas();
+                }
+            }, 50);
+        } else {
+            isShuffling = true;
+            shuffleStartTime = Date.now();
+            document.getElementById("gestureStatus").innerText = "🃟 洗牌展开中... 🃟";
+            drawCanvas();
+        }
+    }
+    
+    // 手势识别函数 (与原相同)
+    function isDrawGesture(landmarks) {
+        const indexTip = landmarks[8], indexDip = landmarks[7], indexMcp = landmarks[5];
+        const middleTip = landmarks[12], middleMcp = landmarks[9];
+        const ringTip = landmarks[16], ringMcp = landmarks[13];
+        const pinkyTip = landmarks[20], pinkyMcp = landmarks[17];
+        const indexStraight = (indexTip.y < indexDip.y) && (indexTip.y < indexMcp.y);
+        const middleBent = (middleTip.y > middleMcp.y + 0.02);
+        const ringBent = (ringTip.y > ringMcp.y + 0.02);
+        const pinkyBent = (pinkyTip.y > pinkyMcp.y + 0.02);
+        const allBent = middleBent && ringBent && pinkyBent;
+        return indexStraight && allBent;
+    }
+    
+    function isResetGesture(landmarks) {
+        const fingerTips = [4,8,12,16,20];
+        const fingerPips = [3,6,10,14,18];
+        for(let i=0; i<fingerTips.length; i++) {
+            let tip = landmarks[fingerTips[i]];
+            let pip = landmarks[fingerPips[i]];
+            if(i === 0) { let mcp = landmarks[1]; if(Math.abs(tip.x - mcp.x) < 0.05) return false; }
+            else { if(tip.y > pip.y) return false; }
+        }
+        return true;
+    }
+    
+    function mapLandmarkToCanvas(lm) {
+        let mirroredX = 1 - lm.x;
+        return { x: mirroredX * CANVAS_W, y: lm.y * CANVAS_H };
+    }
+    
+    let hands = null, camera = null, video = null;
+    function onHandResults(results) {
+        if(isShuffling) return;
+        if(!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+            if(timerActive) stopTimer();
+            if(resetGestureActive) stopResetTimer();
+            currentGestureValid = false;
+            hoverCardId = null;
+            updateTimerRing(0);
+            document.getElementById("gestureStatus").innerText = "🤚 未检测到手";
+            fingerTipPos = { x: -50, y: -50 };
+            drawCanvas();
+            return;
+        }
+        let handLms = results.multiHandLandmarks[0];
+        let isDraw = isDrawGesture(handLms);
+        let isReset = isResetGesture(handLms);
+        let indexTip = handLms[8];
+        let mappedTip = mapLandmarkToCanvas(indexTip);
+        fingerTipPos = mappedTip;
+        
+        if ((isDraw || isReset) && !musicPlaying) attemptAutoPlay();
+        
+        if(isReset) { if(!resetGestureActive) startResetTimer(); } else { if(resetGestureActive) stopResetTimer(); }
+        if(resetGestureActive) { currentGestureValid = false; hoverCardId = null; drawCanvas(); return; }
+        
+        if(isSpread && phase < 3 && !isRevealMode && !isDeckStacked) {
+            currentGestureValid = isDraw;
+            if(!isDraw) {
+                if(timerActive) stopTimer();
+                hoverCardId = null;
+                updateTimerRing(0);
+                document.getElementById("gestureStatus").innerText = "✋ 请握拳并伸出食指 (小光圈变红)";
+                drawCanvas();
+                return;
+            }
+            let cardUnder = findNearestCard(fingerTipPos.x, fingerTipPos.y);
+            if(cardUnder && !cardUnder.removed) {
+                if(hoverCardId !== cardUnder.id) {
+                    stopTimer();
+                    timerSec = 0;
+                    updateTimerRing(0);
+                    hoverCardId = cardUnder.id;
+                    document.getElementById("gestureStatus").innerText = `👉 指向牌面，保持2秒抽牌 (小光圈绿)`;
+                    startTimerForCard(cardUnder.id);
+                } else { if(!timerActive) startTimerForCard(cardUnder.id); }
+            } else {
+                if(timerActive) stopTimer();
+                hoverCardId = null;
+                updateTimerRing(0);
+                document.getElementById("gestureStatus").innerText = "☝️ 指尖对准扇形内的卡牌";
+            }
+        } else {
+            currentGestureValid = false;
+            if(timerActive) stopTimer();
+            hoverCardId = null;
+            if(isDeckStacked) document.getElementById("gestureStatus").innerText = "✋ 五指张开保持1秒，洗牌展开";
+            else if(isRevealMode) document.getElementById("gestureStatus").innerText = "✨ 占卜完成，五指张开重置 ✨";
+            else if(phase === 3 && !isRevealMode) document.getElementById("gestureStatus").innerText = "✨ 三张已抽完，即将翻牌 ✨";
+        }
+        drawCanvas();
+    }
+    
+    function startTimerForCard(cardId) {
+        if(phase>=3) return;
+        if(timerActive) return;
+        timerSec = 0;
+        timerActive = true;
+        if(timerIntervalId) clearInterval(timerIntervalId);
+        timerIntervalId = setInterval(() => {
+            if(!currentGestureValid || hoverCardId !== cardId || phase>=3 || isShuffling || isRevealMode) { stopTimer(); return; }
+            timerSec += 0.1;
+            let percent = Math.min(100, (timerSec/2.0)*100);
+            updateTimerRing(percent);
+            if(timerSec >= 2.0) {
+                stopTimer();
+                if(!cards.find(c=>c.id===cardId)?.removed && phase<3) performDraw(cardId);
+                hoverCardId = null;
+                updateTimerRing(0);
+            }
+        }, 100);
+    }
+    function stopTimer() {
+        if(timerIntervalId) { clearInterval(timerIntervalId); timerIntervalId = null; }
+        timerActive = false;
+        timerSec = 0;
+        updateTimerRing(0);
+    }
+    function updateTimerRing(percent) {
+        let ring = document.getElementById('timerRing');
+        let deg = (percent/100)*360;
+        ring.style.background = `conic-gradient(#ffd966 ${deg}deg, #3a2e1f ${deg}deg)`;
+        ring.innerText = `${Math.floor(percent)}%`;
+    }
+    function startResetTimer() {
+        resetGestureActive = true;
+        resetTimerSec = 0;
+        if(resetTimerInterval) clearInterval(resetTimerInterval);
+        resetTimerInterval = setInterval(() => {
+            resetTimerSec += 0.1;
+            if(resetTimerSec >= 1.0) {
+                stopResetTimer();
+                if(!isShuffling) startShuffleAndReset();
+            }
+        }, 100);
+    }
+    function stopResetTimer() {
+        if(resetTimerInterval) { clearInterval(resetTimerInterval); resetTimerInterval = null; }
+        resetGestureActive = false;
+        resetTimerSec = 0;
+    }
+    
+    function initMediaPipe() {
+        hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        hands.setOptions({ maxNumHands:1, modelComplexity:0, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+        hands.onResults(onHandResults);
+        video = document.createElement('video');
+        video.style.display = 'none';
+        document.body.appendChild(video);
+        camera = new Camera(video, {
+            onFrame: async () => {
+                if(frameIdx % frameSkip === 0) await hands.send({image: video});
+                frameIdx++;
+            },
+            width: 320, height: 240   // 降低分辨率提升性能
+        });
+        camera.start().catch(err => console.warn("摄像头启动失败", err));
+    }
+    
+    // 初始化
+    window.addEventListener('resize', () => {
+        resizeCanvas();
+        if(isSpread && !isDeckStacked) computeCardPositions();
+    });
+    resizeCanvas();
+    initSpreadCards();
+    initMediaPipe();
+    drawCanvas();
+    function animate() {
+        if(!isShuffling) drawCanvas();
+        else drawShuffleAnimation();
+        requestAnimationFrame(animate);
+    }
+    animate();
+    
+    // 绑定按钮事件
+    document.getElementById('resetBtn').addEventListener('click', () => { startShuffleAndReset(); });
+    document.getElementById('resetAfterReveal').addEventListener('click', () => { startShuffleAndReset(); });
+</script>
+</body>
+</html>
